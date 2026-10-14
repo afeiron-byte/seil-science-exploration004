@@ -440,10 +440,10 @@
                 <div class="bg-white rounded-xl p-3 flex flex-col xl:flex-row xl:items-center gap-3 shadow-sm border border-gray-100">
                     <div class="font-bold text-gray-700 w-32 flex items-center gap-2 text-sm"><i class="fa-solid fa-wind text-emerald-400"></i> 복합 공기질</div>
                     <div class="flex flex-wrap gap-2">
-                        ${makePin('VCC', 'bg-red-500', '5V')}
-                        ${makePin('GND', 'bg-gray-800', 'GND')}
-                        ${makePin('TX', 'bg-yellow-400', 'D10')}
-                        ${makePin('RX', 'bg-green-500', 'D11')}
+                        ${makePin('VCC(빨강)', 'bg-red-500', '5V')}
+                        ${makePin('GND(검정)', 'bg-gray-800', 'GND')}
+                        ${makePin('SDA(흰색)', 'bg-white border border-gray-400', 'A4 (SDA)')}
+                        ${makePin('SCL(초록)', 'bg-green-500', 'A5 (SCL)')}
                     </div>
                 </div>`;
             }
@@ -615,31 +615,20 @@
             let loopStart = "void loop() {\n  // JSON 형식으로 웹에 데이터를 전송합니다.\n  String json = \"{\";\n";
             let loopLogic = "";
             let loopEnd = "  json += \"}\";\n  Serial.println(json);\n  delay(2000);\n}";
-            let needSoftwareSerialListenSwitch = (pm && gps); // Uno limitation
 
-            if (pm || gps) includes += "#include <SoftwareSerial.h>\n";
-            
             if (pm) {
-                variables += "SoftwareSerial pmSerial(10, 11); // RX, TX (복합 공기질 센서)\n";
-                variables += "int pm25 = 0, co2 = 0, voc = 0;\n";
-                setup += "  pmSerial.begin(9600);\n";
-                
-                if (needSoftwareSerialListenSwitch) {
-                    loopLogic += "  pmSerial.listen();\n  delay(500);\n";
-                }
+                includes += "#include <am1008w_k_i2c.h>\n";
+                variables += "AM1008W_K_I2C am1008w_k;\nint pm25 = 0, co2 = 0, voc = 0;\n";
+                setup += "  am1008w_k.begin();\n";
                 
                 loopLogic += `
-  // 복합 공기질 센서 데이터 읽기 (PM2.5, CO2)
-  if (pmSerial.available() >= 32) { // 데이터 프레임 검사
-    if (pmSerial.read() == 0x16 && pmSerial.read() == 0x11) {
-      // 라이브러리 또는 센서 매뉴얼에 맞게 파싱 코드를 적용하세요.
-      pm25 = 15; // 예시용 더미 데이터 (실제 코드로 교체 필요)
-      co2 = 420; // 예시용 더미 데이터 (실제 코드로 교체 필요)
-      voc = 1;   // 예시용 더미 데이터 (실제 코드로 교체 필요)
-      while(pmSerial.available()) pmSerial.read(); // 버퍼 비우기
-    }
+  // 복합 공기질 센서 데이터 읽기 (I2C 통신: PM2.5, CO2, VOC)
+  if (am1008w_k.read_data_command() == 0) {
+    pm25 = am1008w_k.get_pm2p5();
+    co2 = am1008w_k.get_co2();
+    voc = am1008w_k.get_voc();
   }
-  json += "\"pm25\":" + String(pm25) + ",\"co2\":" + String(co2) + ",\"voc\":" + String(voc) + ",";
+  json += "\\"pm25\\":" + String(pm25) + ",\\"co2\\":" + String(co2) + ",\\"voc\\":" + String(voc) + ",";
 `;
             }
 
@@ -668,14 +657,10 @@
             }
 
             if (gps) {
-                includes += "#include <TinyGPS++.h>\n";
+                includes += "#include <SoftwareSerial.h>\n#include <TinyGPS++.h>\n";
                 variables += "SoftwareSerial gpsSerial(3, 4); // RX, TX (GPS)\nTinyGPSPlus gps;\n";
                 variables += "float lat = 0.0, lng = 0.0;\n";
                 setup += "  gpsSerial.begin(9600);\n";
-                
-                if (needSoftwareSerialListenSwitch) {
-                    loopLogic += "  gpsSerial.listen();\n  delay(500);\n";
-                }
 
                 loopLogic += `
   // GPS 데이터 인코딩
