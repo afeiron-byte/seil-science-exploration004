@@ -21,14 +21,14 @@
         }
         .aspect-16-9-container {
             width: 100%;
-            max-width: 177.78vh; /* 16:9 ratio based on height */
+            max-width: 177.78vh;
             height: 100vh;
-            max-height: 56.25vw; /* 16:9 ratio based on width */
+            max-height: 56.25vw;
             margin: auto;
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            background: rgba(255, 255, 255, 0.92);
+            background: rgba(255, 255, 255, 0.94);
             backdrop-filter: blur(12px);
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.08);
         }
@@ -40,7 +40,6 @@
                 overflow: visible;
             }
         }
-        /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -233,9 +232,18 @@
         <!-- ==================== 탭 2: 실시간 관측소 ==================== -->
         <main id="tab-station" class="hidden flex-1 flex-col gap-3 p-5 overflow-hidden">
             
-            <!-- 상단 컨트롤 바 (불필요한 테스트 기능 제거 & 깔끔한 구성) -->
+            <!-- 상단 컨트롤 바 -->
             <div class="flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-2.5 rounded-2xl border border-slate-200/80 shadow-sm shrink-0">
                 <div class="flex items-center gap-2.5">
+                    <!-- 통신 속도(Baudrate) 선택 -->
+                    <div class="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 rounded-xl border border-slate-200">
+                        <span class="text-[11px] font-bold text-slate-500">통신속도:</span>
+                        <select id="baudRateSelect" class="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer">
+                            <option value="9600" selected>9600 bps (기본)</option>
+                            <option value="115200">115200 bps</option>
+                        </select>
+                    </div>
+
                     <button id="connectBtn" onclick="toggleArduinoConnection()" class="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm transition-all">
                         <i data-lucide="usb" class="w-4 h-4"></i> <span id="connectBtnText">아두이노 연결하기</span>
                     </button>
@@ -248,10 +256,10 @@
                     </button>
                 </div>
 
-                <!-- 연결 시 주의사항 안내 문구 -->
-                <div id="connectionNotice" class="flex items-center gap-2 text-xs text-slate-500 font-medium bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/60">
-                    <i data-lucide="info" class="w-4 h-4 text-emerald-600 shrink-0"></i>
-                    <span>아두이노 IDE의 <strong>시리얼 모니터를 반드시 닫고</strong> 연결하세요. 재연결 시에는 <strong>USB를 뺐다가 다시 꽂아주세요.</strong></span>
+                <!-- 실시간 원본 시리얼 수신 확인 모니터 -->
+                <div class="flex items-center gap-2 bg-slate-900 text-emerald-400 px-3 py-1.5 rounded-xl text-xs font-mono max-w-md truncate border border-slate-700">
+                    <span class="text-slate-400 font-sans font-bold text-[11px] shrink-0">수신 데이터:</span>
+                    <span id="rawSerialMonitor" class="truncate">아두이노 연결 대기 중...</span>
                 </div>
             </div>
 
@@ -401,10 +409,8 @@
     </div>
 
     <script>
-        // 아이콘 초기화
         lucide.createIcons();
 
-        // 센서 선택 상태
         const selectedSensors = {
             am1008: true,
             ph: false,
@@ -413,7 +419,6 @@
             gps: false
         };
 
-        // 탭 전환 함수
         function switchTab(tabId) {
             const builder = document.getElementById('tab-builder');
             const station = document.getElementById('tab-station');
@@ -436,7 +441,6 @@
             }
         }
 
-        // 센서 토글
         function toggleSensor(key) {
             selectedSensors[key] = !selectedSensors[key];
             const card = document.getElementById(`card-${key}`);
@@ -451,7 +455,6 @@
             updateChartAxesVisibility();
         }
 
-        // 조립소 렌더링 (회로, 라이브러리, 코드)
         function renderBuilder() {
             const wiringContainer = document.getElementById('wiring-guide');
             const libContainer = document.getElementById('lib-guide');
@@ -466,7 +469,6 @@
                 </div>`;
             }
 
-            // 1. AM1008W-K (I2C 연결 반영)
             if (selectedSensors.am1008) {
                 libs.push({ name: 'AM1008W_K_I2C', desc: '복합 공기질 센서 I2C 제어' });
                 wiringHTML += `
@@ -484,7 +486,6 @@
                 </div>`;
             }
 
-            // 2. 수질(pH) 센서 (VCC, GND, DATA 통일)
             if (selectedSensors.ph) {
                 wiringHTML += `
                 <div class="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2">
@@ -500,7 +501,6 @@
                 </div>`;
             }
 
-            // 3. DS18B20 방수 온도 센서 (내장 SVG 다이어그램 포함)
             if (selectedSensors.ds18b20) {
                 libs.push({ name: 'OneWire', desc: '1-Wire 통신용' });
                 libs.push({ name: 'DallasTemperature', desc: 'DS18B20 온도 계산용' });
@@ -517,30 +517,23 @@
                             <span class="pin-chip"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>DAT ➔ <strong class="text-blue-600">D5</strong></span>
                         </div>
                     </div>
-                    <!-- 깨지지 않는 내장 SVG 회로도 -->
                     <div class="bg-white p-2 rounded-lg border border-indigo-100">
                         <div class="text-[11px] font-bold text-indigo-700 mb-1 flex items-center gap-1">
                             <span>ⓘ 터미널 모듈 연결 안내 (풀업 저항 내장형)</span>
                         </div>
                         <svg viewBox="0 0 500 115" class="w-full h-auto">
-                            <!-- 센서 프로브 -->
                             <rect x="10" y="42" width="110" height="28" rx="14" fill="#94a3b8" stroke="#64748b" stroke-width="2"/>
                             <rect x="110" y="40" width="55" height="32" fill="#334155"/>
-                            <!-- 케이블 곡선 -->
                             <path d="M 165 56 C 215 56, 215 15, 250 15 C 285 15, 285 95, 320 95 C 350 95, 350 56, 375 56" fill="none" stroke="#334155" stroke-width="10" stroke-linecap="round"/>
-                            <!-- 3색 피복선 -->
                             <line x1="375" y1="42" x2="405" y2="42" stroke="#eab308" stroke-width="3.5"/>
                             <line x1="375" y1="56" x2="405" y2="56" stroke="#ef4444" stroke-width="3.5"/>
                             <line x1="375" y1="70" x2="405" y2="70" stroke="#1e293b" stroke-width="3.5"/>
-                            <!-- 어댑터 보드 -->
                             <rect x="395" y="12" width="85" height="90" rx="8" fill="#1e293b"/>
                             <text x="437" y="24" fill="#cbd5e1" font-size="7" text-anchor="middle" font-weight="bold">Pluggable Terminal</text>
-                            <!-- 초록색 터미널 블록 -->
                             <rect x="405" y="30" width="26" height="52" fill="#22c55e" stroke="#15803d" stroke-width="1.5"/>
                             <circle cx="418" cy="42" r="4.5" fill="#cbd5e1"/><line x1="415" y1="42" x2="421" y2="42" stroke="#475569" stroke-width="1.5"/>
                             <circle cx="418" cy="56" r="4.5" fill="#cbd5e1"/><line x1="415" y1="56" x2="421" y2="56" stroke="#475569" stroke-width="1.5"/>
                             <circle cx="418" cy="70" r="4.5" fill="#cbd5e1"/><line x1="415" y1="70" x2="421" y2="70" stroke="#475569" stroke-width="1.5"/>
-                            <!-- 우측 아두이노 연결 핀 -->
                             <text x="458" y="45" fill="#f8fafc" font-size="8" font-weight="bold" text-anchor="end">DAT</text>
                             <text x="458" y="59" fill="#f8fafc" font-size="8" font-weight="bold" text-anchor="end">VCC</text>
                             <text x="458" y="73" fill="#f8fafc" font-size="8" font-weight="bold" text-anchor="end">GND</text>
@@ -552,7 +545,6 @@
                 </div>`;
             }
 
-            // 4. 온습도 센서
             if (selectedSensors.dht) {
                 libs.push({ name: 'DHT sensor library', desc: 'Adafruit 온습도 라이브러리' });
                 wiringHTML += `
@@ -569,7 +561,6 @@
                 </div>`;
             }
 
-            // 5. GPS 모듈
             if (selectedSensors.gps) {
                 libs.push({ name: 'TinyGPSPlus', desc: 'GPS 좌표 해석 라이브러리' });
                 wiringHTML += `
@@ -589,7 +580,6 @@
 
             wiringContainer.innerHTML = wiringHTML;
 
-            // 라이브러리 렌더링
             if (libs.length === 0) {
                 libContainer.innerHTML = `<span class="text-xs text-slate-400">별도 설치할 외부 라이브러리가 없습니다.</span>`;
             } else {
@@ -601,16 +591,16 @@
                 `).join('');
             }
 
-            // 아두이노 코드 생성 (통신 속도 115200 통일!)
             codeContainer.textContent = generateArduinoSketch();
         }
 
+        // 아두이노 코드 생성 (Wire.h 명시 및 표준 9600 보드레이트 적용)
         function generateArduinoSketch() {
             let code = `// [우리 동네 환경 탐구] 맞춤형 아두이노 코드\n`;
-            code += `// 시리얼 통신 속도: 115200 bps\n\n`;
+            code += `// 시리얼 통신 속도: 9600 bps\n\n`;
 
             if (selectedSensors.am1008) {
-                code += `#include <am1008w_k_i2c.h>\nAM1008W_K_I2C am1008w_k;\n`;
+                code += `#include <Wire.h>\n#include <am1008w_k_i2c.h>\nAM1008W_K_I2C am1008w_k;\n`;
             }
             if (selectedSensors.dht) {
                 code += `#include <DHT.h>\n#define DHTPIN 2\n#define DHTTYPE DHT11\nDHT dht(DHTPIN, DHTTYPE);\n`;
@@ -625,8 +615,8 @@
                 code += `#define PH_PIN A0\n`;
             }
 
-            code += `\nvoid setup() {\n  Serial.begin(115200);\n`;
-            if (selectedSensors.am1008) code += `  am1008w_k.begin();\n`;
+            code += `\nvoid setup() {\n  Serial.begin(9600);\n`;
+            if (selectedSensors.am1008) code += `  Wire.begin();\n  am1008w_k.begin();\n`;
             if (selectedSensors.dht) code += `  dht.begin();\n`;
             if (selectedSensors.ds18b20) code += `  waterSensor.begin();\n`;
             if (selectedSensors.gps) code += `  gpsSerial.begin(9600);\n`;
@@ -772,9 +762,7 @@
             plugins: [whiteBgPlugin]
         });
 
-        // 선택된 센서에 따라 그래프 Y축 동적 변경
         function updateChartAxesVisibility() {
-            // 오염도 차트 축 업데이트
             pollutionChart.data.datasets[0].hidden = !selectedSensors.am1008;
             pollutionChart.data.datasets[1].hidden = !selectedSensors.am1008;
             pollutionChart.data.datasets[2].hidden = !selectedSensors.am1008;
@@ -785,7 +773,6 @@
             pollutionChart.options.scales.yPh.display = selectedSensors.ph;
             pollutionChart.update();
 
-            // 온습도/수온 차트 축 업데이트
             climateChart.data.datasets[0].hidden = !selectedSensors.dht;
             climateChart.data.datasets[1].hidden = !selectedSensors.ds18b20;
             climateChart.data.datasets[2].hidden = !selectedSensors.dht;
@@ -795,13 +782,16 @@
             climateChart.update();
         }
 
-        // ==================== 아두이노 시리얼 통신 (가속도 코드와 100% 동일한 구조) ====================
+        // ==================== 아두이노 시리얼 통신 ====================
         let port = null;
         let reader = null;
         let readableStreamClosed = null;
         let keepReading = false;
         const maxDataPoints = 40;
         let dataHistory = [];
+
+        // 여러 줄에 걸쳐 들어오는 일반 예제 텍스트를 모으기 위한 임시 객체
+        let fallbackData = {};
 
         async function toggleArduinoConnection() {
             if (port) {
@@ -813,34 +803,23 @@
 
         async function connectArduino() {
             try {
+                const selectedBaud = parseInt(document.getElementById('baudRateSelect').value, 10);
                 port = await navigator.serial.requestPort();
-                // 가속도 코드와 동일하게 115200 보드레이트로 오픈
-                await port.open({ baudRate: 115200 });
+                await port.open({ baudRate: selectedBaud });
 
                 document.getElementById('connectBtnText').textContent = '연결 해제';
                 document.getElementById('connectBtn').classList.replace('bg-emerald-700', 'bg-rose-600');
                 document.getElementById('connectBtn').classList.replace('hover:bg-emerald-800', 'hover:bg-rose-700');
-                updateStatus('연결됨 (데이터 수신 중)', 'bg-emerald-100 text-emerald-800', 'bg-emerald-500');
+                updateStatus(`연결됨 (${selectedBaud} bps)`, 'bg-emerald-100 text-emerald-800', 'bg-emerald-500');
+                document.getElementById('rawSerialMonitor').textContent = '데이터 수신 대기 중 (약 2초 소요)...';
 
                 keepReading = true;
                 readLoop();
             } catch (err) {
                 console.error('연결 에러:', err);
-                // 중요: 포트 열기에 실패했을 때 port 객체를 초기화해야 다음 클릭 시 다시 포트 선택창이 뜹니다!
                 port = null;
-
-                if (err.name === 'SecurityError') {
-                    alert("USB 연결 권한이 차단되었습니다. 미리보기 창이 아닌 일반 크롬 새 창에서 파일을 열어주세요!");
-                } else if (err.name === 'NotFoundError') {
-                    // 사용자가 포트 선택 취소한 경우 무시
-                } else {
-                    alert(
-                        "⚠️ 포트를 열 수 없습니다 (Failed to open serial port).\n\n" +
-                        "[해결 방법]\n" +
-                        "1. 아두이노 IDE의 시리얼 모니터 창이 열려 있다면 닫아주세요.\n" +
-                        "2. 다른 인터넷 탭(예: 가속도 탐구 웹)에서 아두이노가 연결되어 있다면 닫아주세요.\n" +
-                        "3. USB 케이블을 컴퓨터에서 뺐다가 다시 꽂은 후 [아두이노 연결하기]를 눌러주세요!"
-                    );
+                if (err.name !== 'NotFoundError') {
+                    alert("포트를 열 수 없습니다. 아두이노 프로그램을 완전히 종료하고 USB를 뺐다가 다시 꽂아주세요!\n\n상세 오류: " + err.message);
                 }
             }
         }
@@ -862,6 +841,7 @@
             document.getElementById('connectBtn').classList.replace('bg-rose-600', 'bg-emerald-700');
             document.getElementById('connectBtn').classList.replace('hover:bg-rose-700', 'hover:bg-emerald-800');
             updateStatus('연결 대기 중', 'bg-slate-100 text-slate-600', 'bg-rose-500');
+            document.getElementById('rawSerialMonitor').textContent = '연결 해제됨';
         }
 
         function updateStatus(text, badgeClass, dotClass) {
@@ -898,82 +878,104 @@
             }
         }
 
-        // 수신 데이터 처리 (JSON 형식 및 일반 key:value 형식 모두 호환)
+        // 만능 데이터 파서 (JSON 포맷 + 라이브러리 기본 예제 텍스트까지 모두 인식)
         function processData(line) {
+            // 상단 미니 모니터에 원본 텍스트 실시간 표시
+            document.getElementById('rawSerialMonitor').textContent = line;
+
             try {
-                let data = {};
                 const startIdx = line.indexOf('{');
                 const endIdx = line.lastIndexOf('}');
 
+                // 1) JSON 형태로 들어올 경우 (웹사이트 제공 코드)
                 if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-                    data = JSON.parse(line.substring(startIdx, endIdx + 1));
-                } else {
+                    const data = JSON.parse(line.substring(startIdx, endIdx + 1));
+                    updateDashboardUI(data);
                     return;
                 }
 
-                const now = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+                // 2) 만약 AM1008W-K 기본 예제 스케치가 업로드되어 일반 텍스트로 들어올 경우 자동 추출
+                let matched = false;
+                const pmMatch = line.match(/PM2\.5\s*[:=]\s*(\d+)/i);
+                if (pmMatch) { fallbackData.pm25 = Number(pmMatch[1]); matched = true; }
 
-                // 카드 UI 업데이트
-                if (data.pm25 !== undefined) document.getElementById('val-pm25').textContent = data.pm25;
-                if (data.co2 !== undefined) document.getElementById('val-co2').textContent = data.co2;
-                if (data.voc !== undefined) document.getElementById('val-voc').textContent = data.voc;
-                if (data.ph !== undefined) document.getElementById('val-ph').textContent = Number(data.ph).toFixed(2);
-                if (data.temp !== undefined) document.getElementById('val-temp').textContent = Number(data.temp).toFixed(1);
-                if (data.humi !== undefined) document.getElementById('val-humi').textContent = Number(data.humi).toFixed(1);
-                if (data.wtemp !== undefined) document.getElementById('val-wtemp').textContent = Number(data.wtemp).toFixed(1);
+                const co2Match = line.match(/CO2\s*[:=]\s*(\d+)/i);
+                if (co2Match) { fallbackData.co2 = Number(co2Match[1]); matched = true; }
 
-                if (data.lat !== undefined && data.lat !== 0) {
-                    document.getElementById('val-lat').textContent = Number(data.lat).toFixed(6);
+                const vocMatch = line.match(/VOC\s*[:=]\s*(\d+)/i);
+                if (vocMatch) { fallbackData.voc = Number(vocMatch[1]); matched = true; }
+
+                const tempMatch = line.match(/(?:TEMP|Temperature)\s*[:=]\s*([0-9.-]+)/i);
+                if (tempMatch) { fallbackData.temp = Number(tempMatch[1]); matched = true; }
+
+                const humiMatch = line.match(/(?:HUMI|Humidity)\s*[:=]\s*([0-9.-]+)/i);
+                if (humiMatch) { fallbackData.humi = Number(humiMatch[1]); matched = true; }
+
+                if (matched && (fallbackData.pm25 !== undefined || fallbackData.co2 !== undefined)) {
+                    updateDashboardUI(fallbackData);
                 }
-                if (data.lng !== undefined && data.lng !== 0) {
-                    document.getElementById('val-lng').textContent = Number(data.lng).toFixed(6);
-                }
-
-                // 차트 1 업데이트
-                pollutionChart.data.labels.push(now);
-                pollutionChart.data.datasets[0].data.push(data.pm25 ?? null);
-                pollutionChart.data.datasets[1].data.push(data.co2 ?? null);
-                pollutionChart.data.datasets[2].data.push(data.voc ?? null);
-                pollutionChart.data.datasets[3].data.push(data.ph ?? null);
-
-                if (pollutionChart.data.labels.length > maxDataPoints) {
-                    pollutionChart.data.labels.shift();
-                    pollutionChart.data.datasets.forEach(ds => ds.data.shift());
-                }
-                pollutionChart.update();
-
-                // 차트 2 업데이트
-                climateChart.data.labels.push(now);
-                climateChart.data.datasets[0].data.push(data.temp ?? null);
-                climateChart.data.datasets[1].data.push(data.wtemp ?? null);
-                climateChart.data.datasets[2].data.push(data.humi ?? null);
-
-                if (climateChart.data.labels.length > maxDataPoints) {
-                    climateChart.data.labels.shift();
-                    climateChart.data.datasets.forEach(ds => ds.data.shift());
-                }
-                climateChart.update();
-
-                // 기록 저장
-                dataHistory.push({
-                    time: now,
-                    pm25: data.pm25 ?? '',
-                    co2: data.co2 ?? '',
-                    voc: data.voc ?? '',
-                    ph: data.ph ?? '',
-                    temp: data.temp ?? '',
-                    humi: data.humi ?? '',
-                    wtemp: data.wtemp ?? '',
-                    lat: data.lat ?? '',
-                    lng: data.lng ?? ''
-                });
-
             } catch (e) {
                 // 파싱 오류 무시
             }
         }
 
-        // 초기화
+        function updateDashboardUI(data) {
+            const now = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+
+            if (data.pm25 !== undefined) document.getElementById('val-pm25').textContent = data.pm25;
+            if (data.co2 !== undefined) document.getElementById('val-co2').textContent = data.co2;
+            if (data.voc !== undefined) document.getElementById('val-voc').textContent = data.voc;
+            if (data.ph !== undefined) document.getElementById('val-ph').textContent = Number(data.ph).toFixed(2);
+            if (data.temp !== undefined) document.getElementById('val-temp').textContent = Number(data.temp).toFixed(1);
+            if (data.humi !== undefined) document.getElementById('val-humi').textContent = Number(data.humi).toFixed(1);
+            if (data.wtemp !== undefined) document.getElementById('val-wtemp').textContent = Number(data.wtemp).toFixed(1);
+
+            if (data.lat !== undefined && data.lat !== 0) {
+                document.getElementById('val-lat').textContent = Number(data.lat).toFixed(6);
+            }
+            if (data.lng !== undefined && data.lng !== 0) {
+                document.getElementById('val-lng').textContent = Number(data.lng).toFixed(6);
+            }
+
+            // 차트 1 업데이트
+            pollutionChart.data.labels.push(now);
+            pollutionChart.data.datasets[0].data.push(data.pm25 ?? null);
+            pollutionChart.data.datasets[1].data.push(data.co2 ?? null);
+            pollutionChart.data.datasets[2].data.push(data.voc ?? null);
+            pollutionChart.data.datasets[3].data.push(data.ph ?? null);
+
+            if (pollutionChart.data.labels.length > maxDataPoints) {
+                pollutionChart.data.labels.shift();
+                pollutionChart.data.datasets.forEach(ds => ds.data.shift());
+            }
+            pollutionChart.update();
+
+            // 차트 2 업데이트
+            climateChart.data.labels.push(now);
+            climateChart.data.datasets[0].data.push(data.temp ?? null);
+            climateChart.data.datasets[1].data.push(data.wtemp ?? null);
+            climateChart.data.datasets[2].data.push(data.humi ?? null);
+
+            if (climateChart.data.labels.length > maxDataPoints) {
+                climateChart.data.labels.shift();
+                climateChart.data.datasets.forEach(ds => ds.data.shift());
+            }
+            climateChart.update();
+
+            dataHistory.push({
+                time: now,
+                pm25: data.pm25 ?? '',
+                co2: data.co2 ?? '',
+                voc: data.voc ?? '',
+                ph: data.ph ?? '',
+                temp: data.temp ?? '',
+                humi: data.humi ?? '',
+                wtemp: data.wtemp ?? '',
+                lat: data.lat ?? '',
+                lng: data.lng ?? ''
+            });
+        }
+
         function clearAllData() {
             pollutionChart.data.labels = [];
             pollutionChart.data.datasets.forEach(ds => ds.data = []);
@@ -984,6 +986,7 @@
             climateChart.update();
 
             dataHistory = [];
+            fallbackData = {};
             ['pm25', 'co2', 'voc', 'ph', 'temp', 'humi', 'wtemp'].forEach(id => {
                 document.getElementById(`val-${id}`).textContent = '--';
             });
@@ -991,7 +994,6 @@
             document.getElementById('val-lng').textContent = '수신 대기중';
         }
 
-        // 구글 맵 열기
         function openGoogleMaps() {
             const lat = document.getElementById('val-lat').textContent;
             const lng = document.getElementById('val-lng').textContent;
@@ -1002,7 +1004,6 @@
             window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
         }
 
-        // CSV 다운로드
         function downloadCSV(type) {
             if (dataHistory.length === 0) {
                 alert('저장할 데이터가 없습니다.');
@@ -1027,7 +1028,6 @@
             document.body.removeChild(link);
         }
 
-        // 그래프 이미지 다운로드
         function downloadChartImage(canvasId, filename) {
             const canvas = document.getElementById(canvasId);
             const link = document.createElement('a');
@@ -1036,7 +1036,6 @@
             link.click();
         }
 
-        // 초기 렌더링 실행
         renderBuilder();
     </script>
 </body>
