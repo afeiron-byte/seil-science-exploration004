@@ -96,8 +96,8 @@
                     </button>
                 </nav>
 
-                <!-- 우측 탐구 보고서 버튼 -->
-                <div>
+                <!-- 우측 유틸리티 및 탐구 보고서 버튼 -->
+                <div class="flex items-center gap-2">
                     <a href="#" target="_blank" class="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-full text-xs sm:text-sm font-bold shadow-md shadow-indigo-200 transition-all flex items-center gap-2 hover:-translate-y-0.5">
                         <i class="fa-solid fa-file-pen"></i> 탐구 보고서 작성
                     </a>
@@ -257,17 +257,33 @@
             <div id="section-dash" class="hidden w-full h-full flex flex-col gap-3.5 overflow-hidden">
                 
                 <!-- Dashboard Toolbar -->
-                <div class="bg-white py-2 px-5 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap justify-between items-center gap-4 shrink-0">
-                    <div class="flex items-center gap-3">
-                        <button id="btn-connect" onclick="connectSerial()" class="bg-teal-600 hover:bg-teal-700 text-white text-xs sm:text-sm font-bold py-2 px-6 rounded-full transition-all flex items-center gap-2 shadow-sm hover:shadow">
+                <div class="bg-white py-2 px-5 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap justify-between items-center gap-3 shrink-0">
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <button id="btn-connect" onclick="connectSerial()" class="bg-teal-600 hover:bg-teal-700 text-white text-xs sm:text-sm font-bold py-2 px-5 rounded-full transition-all flex items-center gap-2 shadow-sm hover:shadow">
                             <i class="fa-solid fa-usb"></i> 아두이노 USB 연결
                         </button>
                         <div id="connection-status" class="flex items-center gap-2 text-gray-500 text-xs font-bold bg-gray-50 px-3.5 py-1.5 rounded-full border border-gray-100">
                             <span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block animate-pulse"></span> 연결 대기중
                         </div>
+
+                        <button onclick="clearData()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold py-1.5 px-3.5 rounded-full transition-all flex items-center gap-1.5 border border-gray-200" title="그래프 및 수치 초기화">
+                            <i class="fa-solid fa-trash-can text-gray-500"></i> 초기화
+                        </button>
+
+                        <div class="h-4 w-[1px] bg-gray-200 mx-1 hidden sm:block"></div>
+
+                        <!-- 비상용 시뮬레이션 & 수동 입력 도구 -->
+                        <button id="btn-sim" onclick="toggleSimulation()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-1.5 px-3.5 rounded-full transition-all flex items-center gap-1.5 border border-slate-200" title="아두이노 없이 그래프 작동을 테스트합니다">
+                            <i class="fa-solid fa-vial text-emerald-600"></i> 가상 데이터 테스트
+                        </button>
+
+                        <div class="hidden xl:flex items-center bg-slate-50 border border-slate-200 rounded-full px-3 py-1 gap-1.5">
+                            <input type="text" id="manual-json-input" placeholder='시리얼 모니터 값 붙여넣기 예: {"pm25":15,"co2":450}' class="bg-transparent text-xs text-gray-700 focus:outline-none w-60 font-mono" onkeypress="if(event.key==='Enter') injectManualJSON()">
+                            <button onclick="injectManualJSON()" class="text-[11px] bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-2.5 py-0.5 rounded-full transition-colors">반영</button>
+                        </div>
                     </div>
                     
-                    <div id="msg-box" class="hidden px-4 py-1.5 bg-yellow-50 text-yellow-700 rounded-full text-xs font-bold border border-yellow-200">
+                    <div id="msg-box" class="hidden px-4 py-1.5 bg-yellow-50 text-yellow-700 rounded-full text-xs font-bold border border-yellow-200 max-w-xl truncate">
                         <!-- Messages -->
                     </div>
                 </div>
@@ -716,9 +732,11 @@
             }
         }
 
-        // --- Web Serial API & Chart Logic (기존과 동일하지만 디자인 최적화) ---
-        let port, reader;
-        let isConnected = false;
+        // --- Web Serial API & Chart Logic (검증된 가속도 탐구 코드의 연결 방식 적용) ---
+        let port = null;
+        let reader = null;
+        let keepReading = false;
+        let simInterval = null;
         let chartPollution, chartWeather;
         
         const maxDataPoints = 30;
@@ -726,79 +744,199 @@
         let currentLat = 0, currentLng = 0;
 
         async function connectSerial() {
-            if (!("serial" in navigator)) {
-                showMessage("크롬(Chrome)이나 엣지(Edge) 브라우저를 사용해주세요. (Web Serial 미지원)", "error");
-                return;
+            if (port) {
+                await disconnectArduino();
+            } else {
+                await connectArduino();
             }
+        }
 
-            if (isConnected) {
-                try {
-                    if (reader) await reader.cancel();
-                    if (port) await port.close();
-                } catch(e) {}
-                isConnected = false;
-                updateConnectionStatus();
-                return;
-            }
-
+        async function connectArduino() {
             try {
                 port = await navigator.serial.requestPort();
+                // 불필요한 옵션(bufferSize 등)을 제거하고 표준 baudRate만 지정
                 await port.open({ baudRate: 9600 });
-                isConnected = true;
-                updateConnectionStatus();
-                showMessage("성공적으로 아두이노와 연결되었습니다! 데이터를 수신합니다.");
-                readSerial();
-            } catch (error) {
-                showMessage("연결에 실패했거나 취소되었습니다.", "error");
+
+                if (simInterval) toggleSimulation();
+
+                keepReading = true;
+                updateConnectionStatus(true);
+                showMessage("✅ 아두이노와 성공적으로 연결되었습니다! 데이터를 수신합니다.");
+                readLoop();
+            } catch (err) {
+                console.error('연결 에러:', err);
+                port = null;
+                updateConnectionStatus(false);
+                if (err.name === 'SecurityError') {
+                    showMessage("🔒 USB 연결 권한이 차단되었습니다. 새 인터넷 창에서 열거나 사이트 권한을 확인해주세요.", "error");
+                } else if (err.name === 'NotFoundError') {
+                    // 사용자가 포트 선택 창을 취소한 경우 무시
+                } else {
+                    showMessage("⚠️ 연결 실패: 아두이노 IDE의 시리얼 모니터가 닫혀있는지 확인해주세요. (" + err.message + ")", "error");
+                }
             }
         }
 
-        function updateConnectionStatus() {
-            const statusDiv = document.getElementById('connection-status');
-            const btn = document.getElementById('btn-connect');
-            if (isConnected) {
-                statusDiv.innerHTML = '<span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span> 연결됨';
-                statusDiv.className = "flex items-center gap-2 text-green-700 font-bold bg-green-50 px-4 py-2 rounded-full border border-green-200";
-                btn.innerHTML = '<i class="fa-solid fa-link-slash"></i> 연결 해제';
-                btn.className = "bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-8 rounded-full transition-all flex items-center gap-2 shadow-md";
-            } else {
-                statusDiv.innerHTML = '<span class="w-3 h-3 rounded-full bg-red-500 inline-block animate-pulse"></span> 연결 대기중';
-                statusDiv.className = "flex items-center gap-2 text-gray-500 font-bold bg-gray-50 px-4 py-2 rounded-full border border-gray-100";
-                btn.innerHTML = '<i class="fa-solid fa-usb"></i> 아두이노 USB 연결';
-                btn.className = "bg-teal-600 hover:bg-teal-700 text-white font-bold py-2.5 px-8 rounded-full transition-all flex items-center gap-2 shadow-md";
+        async function disconnectArduino() {
+            keepReading = false;
+
+            if (reader) {
+                try {
+                    await reader.cancel();
+                } catch(e) {}
             }
+            if (port) {
+                try {
+                    await port.close();
+                } catch(e) {}
+                port = null;
+            }
+
+            updateConnectionStatus(false);
+            showMessage("🔌 아두이노 연결이 해제되었습니다.");
         }
 
-        async function readSerial() {
-            while (port.readable && isConnected) {
-                const decoder = new TextDecoderStream();
-                const readableStreamClosed = port.readable.pipeTo(decoder.writable);
-                reader = decoder.readable.getReader();
-                let buffer = "";
+        async function readLoop() {
+            while (port && port.readable && keepReading) {
+                const textDecoder = new TextDecoderStream();
+                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                reader = textDecoder.readable.getReader();
+                
+                let buffer = '';
 
                 try {
-                    while (true) {
+                    while (keepReading) {
                         const { value, done } = await reader.read();
                         if (done) break;
                         
                         buffer += value;
                         let lines = buffer.split('\n');
-                        buffer = lines.pop();
-
-                        for (let line of lines) {
-                            line = line.trim();
-                            if (line.startsWith('{') && line.endsWith('}')) {
-                                try {
-                                    const data = JSON.parse(line);
-                                    updateDashboard(data);
-                                } catch (e) {}
-                            }
+                        
+                        for (let i = 0; i < lines.length - 1; i++) {
+                            let line = lines[i].trim();
+                            if (line) processData(line);
                         }
+                        buffer = lines[lines.length - 1];
                     }
                 } catch (error) {
+                    console.error('읽기 에러 발생:', error);
                 } finally {
                     reader.releaseLock();
                 }
+            }
+        }
+
+        function processData(line) {
+            // 시리얼 문자열에서 중괄호 { ... } 로 묶인 JSON 부분만 안전하게 추출
+            const startIdx = line.indexOf('{');
+            const endIdx = line.lastIndexOf('}');
+            if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+                const jsonStr = line.substring(startIdx, endIdx + 1);
+                try {
+                    const data = JSON.parse(jsonStr);
+                    updateDashboard(data);
+                } catch (e) {
+                    // 파싱 에러 무시 (전송 중 깨진 문자열 필터링)
+                }
+            }
+        }
+
+        // 그래프 및 카드 데이터 초기화 함수
+        function clearData() {
+            timeLabels.length = 0;
+            dataPM.length = 0;
+            dataCO2.length = 0;
+            dataVOC.length = 0;
+            dataPH.length = 0;
+            dataTemp.length = 0;
+            dataHum.length = 0;
+            dataWaterTemp.length = 0;
+
+            if (chartPollution) chartPollution.update();
+            if (chartWeather) chartWeather.update();
+
+            document.getElementById('val-pm').textContent = '--';
+            document.getElementById('val-co2').textContent = '--';
+            document.getElementById('val-voc').textContent = '--';
+            document.getElementById('val-ph').textContent = '--';
+            document.getElementById('val-temp').textContent = '--';
+            document.getElementById('val-hum').textContent = '--';
+            document.getElementById('val-wtemp').textContent = '--';
+            document.getElementById('val-lat').textContent = '대기중';
+            document.getElementById('val-lng').textContent = '대기중';
+            currentLat = 0;
+            currentLng = 0;
+
+            showMessage("🗑️ 그래프와 측정 기록이 모두 초기화되었습니다.");
+        }
+
+        // 가상 데이터 시뮬레이션 토글
+        function toggleSimulation() {
+            const btn = document.getElementById('btn-sim');
+            if (simInterval) {
+                clearInterval(simInterval);
+                simInterval = null;
+                btn.innerHTML = '<i class="fa-solid fa-vial text-emerald-600"></i> 가상 데이터 테스트';
+                btn.className = "bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-1.5 px-3.5 rounded-full transition-all flex items-center gap-1.5 border border-slate-200";
+                showMessage("가상 데이터 테스트 모드가 종료되었습니다.");
+            } else {
+                // 아무 센서도 선택 안 되어 있으면 복합 공기질 자동 체크
+                const pm = document.getElementById('chk-pm').checked;
+                const ph = document.getElementById('chk-ph').checked;
+                const dht = document.getElementById('chk-dht').checked;
+                const ds = document.getElementById('chk-ds').checked;
+                if (!pm && !ph && !dht && !ds) {
+                    document.getElementById('chk-pm').checked = true;
+                    generateGuide();
+                }
+
+                btn.innerHTML = '<i class="fa-solid fa-stop text-red-500"></i> 테스트 중지';
+                btn.className = "bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold py-1.5 px-3.5 rounded-full transition-all flex items-center gap-1.5 border border-red-200 animate-pulse";
+                showMessage("🧪 가상 센서 데이터가 2초마다 그래프에 입력됩니다.");
+
+                simInterval = setInterval(() => {
+                    const mockData = {
+                        pm25: Math.floor(15 + Math.random() * 25),
+                        co2: Math.floor(450 + Math.random() * 180),
+                        voc: Math.floor(1 + Math.random() * 3),
+                        ph: parseFloat((6.8 + (Math.random() * 0.6 - 0.3)).toFixed(2)),
+                        temp: parseFloat((23.0 + (Math.random() * 2 - 1)).toFixed(1)),
+                        hum: parseFloat((48.0 + (Math.random() * 8 - 4)).toFixed(1)),
+                        w_temp: parseFloat((19.5 + (Math.random() * 1.5 - 0.7)).toFixed(1))
+                    };
+                    updateDashboard(mockData);
+                }, 2000);
+            }
+        }
+
+        // 시리얼 모니터에 찍힌 JSON 한 줄을 수동으로 넣는 함수
+        function injectManualJSON() {
+            const input = document.getElementById('manual-json-input');
+            const val = input.value.trim();
+            if (!val) return;
+            try {
+                const data = JSON.parse(val);
+                updateDashboard(data);
+                input.value = '';
+                showMessage("✅ 수동 입력한 데이터가 그래프에 반영되었습니다!");
+            } catch (e) {
+                showMessage("⚠️ 올바른 JSON 형식이 아닙니다. 예: {\"pm25\":20,\"co2\":500,\"voc\":1}", "error");
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusDiv = document.getElementById('connection-status');
+            const btn = document.getElementById('btn-connect');
+            if (connected) {
+                statusDiv.innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> 연결됨 (수신중)';
+                statusDiv.className = "flex items-center gap-2 text-green-700 text-xs font-bold bg-green-50 px-3.5 py-1.5 rounded-full border border-green-200";
+                btn.innerHTML = '<i class="fa-solid fa-link-slash"></i> 연결 해제';
+                btn.className = "bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-bold py-2 px-5 rounded-full transition-all flex items-center gap-2 shadow-sm hover:shadow";
+            } else {
+                statusDiv.innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block animate-pulse"></span> 연결 대기중';
+                statusDiv.className = "flex items-center gap-2 text-gray-500 text-xs font-bold bg-gray-50 px-3.5 py-1.5 rounded-full border border-gray-100";
+                btn.innerHTML = '<i class="fa-solid fa-usb"></i> 아두이노 USB 연결';
+                btn.className = "bg-teal-600 hover:bg-teal-700 text-white text-xs sm:text-sm font-bold py-2 px-5 rounded-full transition-all flex items-center gap-2 shadow-sm hover:shadow";
             }
         }
 
