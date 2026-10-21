@@ -37,10 +37,54 @@
         .sensor-card.active { border-color: #10b981; background-color: #ecfdf5; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15); }
         .pin-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: white; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
     </style>
+
+    <!-- ==================== 백그라운드 접근 권한 확인 로직 ==================== -->
+    <script>
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwL5cLDjRFa9ea6hfrFLNhUBLoF1EIJp0t2KRxjV0rCASIupazPe47hf8Msd042BObw/exec?action=checkAuth";
+
+        // 화면을 그리는 동안 뒤에서 권한을 요청합니다.
+        const authPromise = fetch(SCRIPT_URL).then(response => response.json());
+
+        window.addEventListener('DOMContentLoaded', () => {
+            authPromise.then(data => {
+                if (data.allowed !== true) {
+                    blockAccess("접근이 차단되었습니다", "현재 관리자에 의해 대시보드 접근이 제한되었습니다. <br>(스프레드시트 인증 코드 불일치)");
+                }
+            }).catch(error => {
+                console.error("Auth check failed:", error);
+                blockAccess("서버 통신 오류", "권한을 확인하는 서버와 연결할 수 없습니다. 일시적인 오류이거나 스크립트 주소가 변경되었을 수 있습니다.");
+            });
+        });
+
+        // 인증 실패 시 화면을 덮어버리는 함수
+        function blockAccess(title, desc) {
+            const overlay = document.getElementById('auth-overlay');
+            const errorBox = document.getElementById('auth-error');
+            
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+            errorBox.classList.remove('hidden');
+            
+            errorBox.innerHTML = `
+                <i data-lucide="shield-alert" class="w-12 h-12 text-rose-500 mx-auto mb-3"></i>
+                <h2 class="text-xl font-extrabold text-slate-800">${title}</h2>
+                <p class="text-sm text-slate-500 mt-2 break-keep">${desc}</p>
+            `;
+            if (window.lucide) lucide.createIcons();
+        }
+    </script>
 </head>
 <body class="flex items-center justify-center min-h-screen text-slate-800 select-none">
 
-    <div class="aspect-16-9-container lg:rounded-2xl border border-emerald-100">
+    <!-- ==================== 권한 차단 오버레이 (초기에는 숨김 상태) ==================== -->
+    <div id="auth-overlay" class="hidden fixed inset-0 z-[9999] flex-col items-center justify-center bg-white/80 backdrop-blur-md">
+        <div id="auth-error" class="hidden bg-white p-8 rounded-2xl shadow-xl border border-rose-100 text-center max-w-sm w-full mx-4">
+            <!-- 에러 메시지가 동적으로 삽입됩니다 -->
+        </div>
+    </div>
+
+    <!-- ==================== 메인 웹앱 컨테이너 (시작부터 즉시 렌더링) ==================== -->
+    <div id="main-app" class="aspect-16-9-container lg:rounded-2xl border border-emerald-100">
         <!-- 상단 헤더 -->
         <header class="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 shrink-0">
             <div class="flex items-center gap-3">
@@ -121,7 +165,6 @@
                             <p class="text-xs text-slate-500 font-medium mt-0.5">SZH-EK024 (DHT11)</p>
                         </div>
                     </div>
-                    <!-- GPS 위치 모듈 복구 -->
                     <div onclick="toggleSensor('gps')" id="card-gps" class="sensor-card cursor-pointer p-3 rounded-xl border-2 border-slate-200 flex items-start gap-3">
                         <div class="p-2 rounded-lg bg-blue-100 text-blue-600 shrink-0 mt-0.5"><i data-lucide="satellite" class="w-5 h-5"></i></div>
                         <div class="flex-1 min-w-0">
@@ -262,7 +305,7 @@
                 <!-- 데이터 연동 및 저장 패널 -->
                 <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-sm flex flex-col justify-between min-h-0">
                     <div>
-                        <!-- 관측 위치 (GPS 복구) -->
+                        <!-- 관측 위치 -->
                         <div class="flex items-center gap-1.5 mb-2 pb-2 border-b border-slate-100">
                             <i data-lucide="map-pin" class="w-4 h-4 text-blue-600"></i><h3 class="font-bold text-xs text-slate-800">관측 위치</h3>
                         </div>
@@ -292,7 +335,7 @@
     <script>
         lucide.createIcons();
 
-        // 선택 가능 센서 목록 (GPS 복구 완료, 하지만 초기값은 false)
+        // 선택 가능 센서 목록
         const selectedSensors = { am1008: true, ph: false, ds18b20: false, dht: false, gps: false };
 
         function switchTab(tabId) {
