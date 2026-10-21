@@ -279,11 +279,8 @@
                         <button onclick="clearAllData()" class="w-full flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 rounded-xl text-xs font-bold transition-all border border-slate-200">
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> 초기화
                         </button>
-                        <button onclick="downloadCSV()" class="w-full flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 rounded-xl text-xs font-bold transition-all border border-slate-200">
-                            <i data-lucide="download" class="w-3.5 h-3.5"></i> CSV 저장
-                        </button>
-                        <button id="btn-gsheets" onclick="sendToGoogleSheets()" class="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-bold transition-all shadow-sm">
-                            <i data-lucide="send" class="w-3.5 h-3.5"></i> 구글 시트로 전송
+                        <button onclick="downloadCSV()" class="w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-bold transition-all shadow-sm">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i> CSV 파일로 저장
                         </button>
                     </div>
                 </div>
@@ -449,7 +446,7 @@
             setTimeout(() => { btn.innerHTML = `<i data-lucide="copy" class="w-3.5 h-3.5"></i> 코드 복사`; lucide.createIcons(); }, 2000);
         }
 
-        // ================= 차트 설정 (축 수치 및 타이틀 복구) =================
+        // ================= 차트 설정 =================
         const whiteBgPlugin = {
             id: 'customCanvasBackgroundColor',
             beforeDraw: (chart) => {
@@ -545,20 +542,19 @@
                 keepReading = false;
                 if (reader) try { await reader.cancel(); } catch (e) {}
                 if (port) { try { await port.close(); } catch (e) {} port = null; }
-                document.getElementById('connectBtnText').textContent = '아두이노 연결';
+                document.getElementById('connectBtnText').textContent = '아두이노 연결하기';
                 document.getElementById('statusBadge').className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold';
                 document.getElementById('statusDot').className = 'w-2 h-2 rounded-full bg-rose-500';
                 document.getElementById('statusText').textContent = '연결 대기 중';
                 document.getElementById('rawSerialMonitor').textContent = '연결 해제됨';
             } else {
                 try {
-                    const baud = parseInt(document.getElementById('baudRateSelect').value, 10);
                     port = await navigator.serial.requestPort();
-                    await port.open({ baudRate: baud });
+                    await port.open({ baudRate: 9600 });
                     document.getElementById('connectBtnText').textContent = '연결 해제';
                     document.getElementById('statusBadge').className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold';
                     document.getElementById('statusDot').className = 'w-2 h-2 rounded-full bg-emerald-500';
-                    document.getElementById('statusText').textContent = `연결됨 (${baud})`;
+                    document.getElementById('statusText').textContent = `연결됨 (9600)`;
                     keepReading = true; readLoop();
                 } catch (err) { port = null; }
             }
@@ -647,47 +643,32 @@
             window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
         }
 
-        // ================= 구글 스프레드시트 연동 =================
-        function sendToGoogleSheets() {
-            if (dataHistory.length === 0) {
-                alert('구글 시트로 전송할 측정 데이터가 없습니다.');
-                return;
-            }
-
-            let gasUrl = localStorage.getItem('eco_gas_url');
-            if (!gasUrl) {
-                gasUrl = prompt('구글 Apps Script 웹앱 URL을 입력하세요:\\n(최초 1회만 입력하며 브라우저에 저장됩니다.)');
-                if (!gasUrl) return;
-                localStorage.setItem('eco_gas_url', gasUrl);
-            }
-
-            const btn = document.getElementById('btn-gsheets');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> 전송 중...`;
-
-            fetch(gasUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(dataHistory)
-            })
-            .then(response => {
-                alert('구글 시트에 성공적으로 데이터가 저장되었습니다!');
-                btn.innerHTML = originalText; lucide.createIcons();
-                if(confirm('전송이 완료되었습니다. 대시보드의 누적 데이터를 초기화할까요?')) clearAllData();
-            })
-            .catch(error => {
-                alert('전송 실패. URL을 다시 확인하거나 Apps Script의 권한 설정을 [모든 사용자]로 변경해주세요.');
-                localStorage.removeItem('eco_gas_url'); 
-                btn.innerHTML = originalText; lucide.createIcons();
-            });
-        }
-
+        // ================= CSV 파일로 저장 기능 =================
         function downloadCSV() {
-            if (!dataHistory.length) return alert('데이터가 없습니다.');
-            let csv = "data:text/csv;charset=utf-8,\uFEFF시간,미세먼지,CO2,VOC,pH,온도,습도,수온,위도,경도\n";
-            dataHistory.forEach(r => csv += `${r.time},${r.pm25},${r.co2},${r.voc},${r.ph},${r.temp},${r.humi},${r.wtemp},${r.lat},${r.lng}\n`);
-            const link = document.createElement('a'); link.href = encodeURI(csv); link.download = `탐구데이터_${new Date().getTime()}.csv`;
-            document.body.appendChild(link); link.click(); link.remove();
+            if (!dataHistory.length) return alert('저장할 측정 데이터가 없습니다.');
+            
+            // CSV 헤더 작성 (BOM 포함하여 엑셀에서 한글 깨짐 방지)
+            let csv = "\uFEFF시간,미세먼지(µg/m³),이산화탄소(ppm),VOC(Lv),수질(pH),대기온도(°C),대기습도(%),수온(°C),위도,경도\n";
+            
+            // 데이터 행 작성
+            dataHistory.forEach(r => {
+                csv += `${r.time},${r.pm25},${r.co2},${r.voc},${r.ph},${r.temp},${r.humi},${r.wtemp},${r.lat},${r.lng}\n`;
+            });
+            
+            // 파일 다운로드 트리거
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            
+            // 브라우저 호환성 처리
+            if (navigator.msSaveBlob) {
+                navigator.msSaveBlob(blob, `환경탐구데이터_${new Date().getTime()}.csv`);
+            } else {
+                link.href = URL.createObjectURL(blob);
+                link.setAttribute('download', `환경탐구데이터_${new Date().getTime()}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
         }
 
         function downloadChartImage(canvasId, filename) {
